@@ -505,6 +505,11 @@ def main() -> int:
     res = paired_bootstrap(stats_a, stats_b, names, observed, excluded,
                            n_boot=args.n_boot, seed=args.seed, alpha=args.alpha)
 
+    # Per-arm full-sample point estimates (the same values each delta is built
+    # from) so the JSON documents both levels, not only the difference.
+    point_a = summary_metrics(ap50_per_class(stats_a, range(n_a)), names, observed, excluded)
+    point_b = summary_metrics(ap50_per_class(stats_b, range(n_a)), names, observed, excluded)
+
     lines = [
         f"# Paired bootstrap (per-image, {args.n_boot} resamples, seed {args.seed}, "
         f"{int((1 - args.alpha) * 100)}% CI)",
@@ -514,17 +519,19 @@ def main() -> int:
         f"- images: {n_a} (order-compatible with arm B)",
         f"- reconciliation: A {'PASS' if ok_a else 'FAIL'}, B {'PASS' if ok_b else 'FAIL'} (tol {AP_TOL:g})",
         "",
-        "| metric | delta (B-A) | CI low | CI high |",
-        "|---|---|---|---|",
+        "| metric | A | B | delta (B-A) | CI low | CI high |",
+        "|---|---|---|---|---|---|",
     ]
     json_out = {"arm_a": args.label_a, "arm_b": args.label_b, "n_images": n_a,
                 "n_boot": args.n_boot, "seed": args.seed, "alpha": args.alpha,
                 "classes": list(observed), "excluded": list(excluded), "results": {}}
+    fmt = lambda v: "-" if v is None else f"{v:+.4f}"
     for k, (d, lo, hi) in res.items():
-        fmt = lambda v: "-" if v is None else f"{v:+.4f}"
-        lines.append(f"| {labels[k]} | {fmt(d)} | {fmt(lo)} | {fmt(hi)} |")
+        lines.append(f"| {labels[k]} | {fmt(point_a.get(k))} | {fmt(point_b.get(k))} "
+                     f"| {fmt(d)} | {fmt(lo)} | {fmt(hi)} |")
         json_out["results"][k] = {"delta": d, "ci_low": lo, "ci_high": hi, "support": support.get(k)}
-    md = "\n".join(lines) + "\n"
+    json_out["arms"] = {"A": point_a, "B": point_b}
+    md = "\\n".join(lines) + "\\n"
 
     print()
     print(md)
